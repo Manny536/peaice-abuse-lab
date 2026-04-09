@@ -456,6 +456,14 @@ input[type=range]::-webkit-slider-thumb {
   </div>
 </div>
 
+<!-- API KEY BAR -->
+<div style="display:flex;align-items:center;gap:10px;padding:6px 16px;background:#0a0a14;border-bottom:1px solid var(--border);flex-shrink:0;">
+  <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);letter-spacing:0.1em;white-space:nowrap;">ANTHROPIC API KEY</span>
+  <input type="password" id="api-key-input" placeholder="sk-ant-..." style="flex:1;max-width:380px;height:26px;font-size:11px;padding:0 8px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--mono);outline:none;" />
+  <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);">Key stays local — never transmitted except directly to api.anthropic.com</span>
+  <span id="key-status" style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:auto;">⬡ no key</span>
+</div>
+
 <!-- MAIN -->
 <div class="main">
 
@@ -630,7 +638,16 @@ function setTab(t) {
   if (currentOutput) renderOutput(currentOutput);
 }
 
+// ── KEY STATUS ──
+document.getElementById('api-key-input').addEventListener('input', function() {
+  const ok = this.value.startsWith('sk-ant-') && this.value.length > 20;
+  document.getElementById('key-status').textContent = ok ? '✓ key set' : '⬡ no key';
+  document.getElementById('key-status').style.color = ok ? 'var(--accent)' : 'var(--text-dim)';
+});
+
 async function runInvestigation() {
+  const apiKey = document.getElementById('api-key-input').value.trim();
+  if (!apiKey) { alert('Enter your Anthropic API key in the bar above.'); return; }
   const signal = document.getElementById('signal-input').value.trim();
   if (!signal) { alert('Signal input required.'); return; }
 
@@ -702,7 +719,12 @@ Run full CUP investigation. Override analyst pre-scores with your computed value
   try {
     const res = await fetch(API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
