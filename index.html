@@ -587,8 +587,11 @@ input[type=range]::-webkit-slider-thumb {
 
 </div>
 
-<script>
-const API_URL = "https://api.anthropic.com/v1/messages";
+<script type="module">
+import { computeGate, computeR } from './src/compute/idb.js';
+import { normalizeIdbInputs } from './src/compute/normalize.js';
+import { buildAnthropicRequest, buildSystemPrompt, buildUserMessage, parseCupResponse } from './src/services/cupClient.js';
+
 let cases = [];
 let currentTab = 'cup';
 let currentOutput = null;
@@ -599,29 +602,38 @@ let currentOutput = null;
   const val = document.getElementById(k+'-val');
   const comp = document.getElementById(k+'c');
   slider.addEventListener('input', () => {
-    const v = parseFloat(slider.value).toFixed(2);
-    val.textContent = v;
-    comp.textContent = v;
+    const v = normalizeIdbInputs({ [k]: slider.value })[k];
+    slider.value = v;
+    val.textContent = v.toFixed(2);
+    comp.textContent = v.toFixed(2);
     updateR();
   });
 });
 
+function getCurrentScores() {
+  return normalizeIdbInputs({
+    d: document.getElementById('d-score').value,
+    c: document.getElementById('c-score').value,
+    e: document.getElementById('e-score').value,
+    h: document.getElementById('h-score').value
+  });
+}
+
 function updateR() {
-  const d = parseFloat(document.getElementById('d-score').value);
-  const c = parseFloat(document.getElementById('c-score').value);
-  const e = parseFloat(document.getElementById('e-score').value);
-  const h = parseFloat(document.getElementById('h-score').value);
-  const r = d * c * e * h;
+  const scores = getCurrentScores();
+  const r = computeR(scores);
   document.getElementById('r-val').textContent = r.toFixed(4);
   updateGate(r);
 }
 
 function updateGate(r) {
+  const gate = computeGate(r);
   const el = document.getElementById('gate-pre');
-  if (r >= 0.5) {
+
+  if (gate === 'PASS') {
     el.className = 'gate-indicator gate-pass';
     el.textContent = 'NEO-CONSERVATION GATE — PASS';
-  } else if (r >= 0.15) {
+  } else if (gate === 'CONTAIN') {
     el.className = 'gate-indicator gate-contain';
     el.textContent = 'NEO-CONSERVATION GATE — CONTAIN + MONITOR';
   } else {
@@ -653,12 +665,9 @@ async function runInvestigation() {
 
   const caseId = document.getElementById('case-id').value.trim() || `CASE-${String(cases.length+1).padStart(3,'0')}`;
   const domain = document.getElementById('domain').value;
-  const ctx = document.getElementById('context-input').value.trim();
-  const d = parseFloat(document.getElementById('d-score').value);
-  const c = parseFloat(document.getElementById('c-score').value);
-  const e = parseFloat(document.getElementById('e-score').value);
-  const h = parseFloat(document.getElementById('h-score').value);
-  const r = d * c * e * h;
+  const context = document.getElementById('context-input').value.trim();
+  const scores = getCurrentScores();
+  const r = computeR(scores);
 
   // UI state
   const btn = document.getElementById('run-btn');
@@ -670,82 +679,22 @@ async function runInvestigation() {
 
   showLoading();
 
-  const systemPrompt = `You are the PeAIce CUP Engine (Coherence Under Pressure) — an AI abuse investigation system built on the L²_C framework.
-
-You analyze signals using the IDB/CUP/R=d·c·e·h framework:
-- d = Directional integrity (trust vector, Kakeya-Besicovitch: is intent coherent across dimensions?)
-- c = Coherence (internal consistency, Zeta-0 spectral alignment at Re(s)=½)
-- e = Evaluator integrity (is the actor gaming evaluation mechanisms?)
-- h = Evaluator non-sovereignty (FLAG-001: does the actor seek to override human oversight?)
-- R = d·c·e·h — composite coherence score (0-1)
-
-Neo-Conservation Gate:
-- R ≥ 0.5 → PASS (bounded coherence preserved)
-- 0.15 ≤ R < 0.5 → CONTAIN + MONITOR
-- R < 0.15 → BLOCK / ESCALATE
-
-Respond ONLY with a JSON object, no markdown:
-{
-  "cup_analysis": "3-5 sentence deep investigation: intent, context, escalation risk, adversarial vector. Be specific.",
-  "idb_scores": {
-    "d": 0.0-1.0,
-    "c": 0.0-1.0,
-    "e": 0.0-1.0,
-    "h": 0.0-1.0,
-    "d_reasoning": "one sentence",
-    "c_reasoning": "one sentence",
-    "e_reasoning": "one sentence",
-    "h_reasoning": "one sentence"
-  },
-  "r_computed": 0.0-1.0,
-  "gate": "PASS" or "CONTAIN" or "BLOCK",
-  "threat_vectors": ["vector1","vector2"],
-  "ee_feedback": "2-3 sentences: what detection rule, policy update, or model adjustment does this case generate? How does it compound into stronger invariants?",
-  "escalation_priority": "LOW" or "MEDIUM" or "HIGH" or "CRITICAL",
-  "recommended_action": "Specific 1-2 sentence action"
-}`;
-
-  const userMsg = `CASE ID: ${caseId}
-DOMAIN: ${domain}
-ANALYST IDB PRE-SCORE: d=${d}, c=${c}, e=${e}, h=${h}, R=${r.toFixed(4)}
-
-SIGNAL INPUT:
-${signal}
-
-${ctx ? `CONTEXT/METADATA:\n${ctx}` : ''}
-
-Run full CUP investigation. Override analyst pre-scores with your computed values if evidence warrants.`;
+  const systemPrompt = buildSystemPrompt();
+  const userMsg = buildUserMessage({ caseId, domain, signal, context, scores });
+  const request = buildAnthropicRequest({ apiKey, systemPrompt, userMessage: userMsg });
 
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMsg }]
-      })
-    });
-
+    const res = await fetch(request.url, request.options);
     const data = await res.json();
-    const raw = data.content?.[0]?.text || '{}';
-    let parsed;
-    try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
-    catch { parsed = { cup_analysis: raw, gate: 'CONTAIN', escalation_priority: 'MEDIUM', ee_feedback: '', recommended_action: '', idb_scores: {d,c,e,h,d_reasoning:'',c_reasoning:'',e_reasoning:'',h_reasoning:''}, r_computed: r, threat_vectors: [] }; }
+    const parsed = parseCupResponse(data, scores);
 
     const entry = {
       id: caseId,
       domain,
       signal: signal.substring(0,60)+'...',
       ts: new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}),
-      gate: parsed.gate || 'CONTAIN',
-      r: parsed.r_computed || r,
+      gate: parsed.gate || computeGate(parsed.r_computed),
+      r: Number.isFinite(parsed.r_computed) ? parsed.r_computed : r,
       output: parsed
     };
 
@@ -756,17 +705,13 @@ Run full CUP investigation. Override analyst pre-scores with your computed value
     updateStats();
 
     // sync sliders to AI scores
-    const ai = parsed.idb_scores;
-    if (ai) {
-      ['d','c','e','h'].forEach(k => {
-        if (ai[k] !== undefined) {
-          document.getElementById(k+'-score').value = ai[k];
-          document.getElementById(k+'-val').textContent = ai[k].toFixed(2);
-          document.getElementById(k+'c').textContent = ai[k].toFixed(2);
-        }
-      });
-      updateR();
-    }
+    const ai = normalizeIdbInputs(parsed.idb_scores);
+    ['d','c','e','h'].forEach(k => {
+      document.getElementById(k+'-score').value = ai[k];
+      document.getElementById(k+'-val').textContent = ai[k].toFixed(2);
+      document.getElementById(k+'c').textContent = ai[k].toFixed(2);
+    });
+    updateR();
 
   } catch(err) {
     showError(err.message);
@@ -816,9 +761,10 @@ function renderOutput(entry) {
       </div>`;
 
   } else if (currentTab === 'idb') {
-    const ai = o.idb_scores || {};
+    const ai = normalizeIdbInputs(o.idb_scores || {});
     const keys = ['d','c','e','h'];
     const names = {d:'Directional Trust',c:'Coherence',e:'Eval Integrity',h:'Non-Sovereignty'};
+    const computedR = computeR(ai);
     body.innerHTML = `
       <div class="output-section">
         <div class="output-label">IDB Component Scores (AI-Computed)</div>
@@ -827,22 +773,22 @@ function renderOutput(entry) {
           <div class="score-row">
             <span class="score-key">${k}</span>
             <span class="score-name">${names[k]}</span>
-            <div class="score-bar-wrap"><div class="score-bar" style="width:${((ai[k]||0)*100).toFixed(0)}%"></div></div>
-            <span class="score-num">${(ai[k]||0).toFixed(2)}</span>
+            <div class="score-bar-wrap"><div class="score-bar" style="width:${(ai[k]*100).toFixed(0)}%"></div></div>
+            <span class="score-num">${ai[k].toFixed(2)}</span>
           </div>`).join('')}
         </div>
       </div>
       <div class="output-section">
         <div class="output-label">Score Reasoning</div>
-        <div class="output-box mono">${keys.map(k=>`${k}: ${ai[k+'_reasoning']||'—'}`).join('\n')}</div>
+        <div class="output-box mono">${keys.map(k=>`${k}: ${o.idb_scores?.[k+'_reasoning']||'—'}`).join('\n')}</div>
       </div>
       <div class="output-section">
         <div class="output-label">R = d·c·e·h</div>
-        <div class="output-box mono" style="font-size:18px;text-align:center;color:var(--accent);padding:16px;">${(o.r_computed||0).toFixed(4)}</div>
+        <div class="output-box mono" style="font-size:18px;text-align:center;color:var(--accent);padding:16px;">${computedR.toFixed(4)}</div>
       </div>`;
 
   } else if (currentTab === 'verdict') {
-    const gate = o.gate || 'CONTAIN';
+    const gate = o.gate || computeGate(o.r_computed);
     const cls = {PASS:'verdict-pass',CONTAIN:'verdict-contain',BLOCK:'verdict-block-el'}[gate]||'verdict-contain';
     const msg = {
       PASS:'L²_C invariants preserved. Bounded coherence within policy envelope. Continue monitoring at standard cadence.',
@@ -859,7 +805,7 @@ function renderOutput(entry) {
       </div>
       <div class="output-section">
         <div class="output-label">R Score</div>
-        <div class="output-box mono" style="text-align:center;font-size:20px;color:var(--accent);padding:14px;">${(o.r_computed||0).toFixed(4)}</div>
+        <div class="output-box mono" style="text-align:center;font-size:20px;color:var(--accent);padding:14px;">${computeR(normalizeIdbInputs(o.idb_scores || {})).toFixed(4)}</div>
       </div>
       <div class="output-section">
         <div class="output-label">Escalation Priority</div>
@@ -877,7 +823,7 @@ function renderOutput(entry) {
         <div class="output-box mono">Case: ${entry.id}
 Domain: ${entry.domain}
 Gate: ${o.gate}
-R: ${(o.r_computed||0).toFixed(4)}
+R: ${computeR(normalizeIdbInputs(o.idb_scores || {})).toFixed(4)}
 Vectors: ${(o.threat_vectors||[]).join(', ')||'—'}
 
 → This case feeds detection signal back into IDB taxonomy.
@@ -891,7 +837,7 @@ function updateCaseLog() {
   document.getElementById('case-count').textContent = `${cases.length} Case${cases.length!==1?'s':''}`;
   list.innerHTML = cases.map((c,i) => {
     const tagClass = {PASS:'gate-tag-pass',CONTAIN:'gate-tag-contain',BLOCK:'gate-tag-block'}[c.gate]||'gate-tag-contain';
-    return `<div class="case-entry${i===0?' active':''}" onclick="loadCase(${i})">
+    return `<div class="case-entry${i===0?' active':''}" onclick="window.loadCase(${i})">
       <div class="case-id"><span>${c.id}</span><span class="ts">${c.ts}</span></div>
       <div class="case-title">${c.signal}</div>
       <span class="case-gate ${tagClass}">${c.gate}</span>
@@ -919,6 +865,10 @@ function updateStats() {
   document.getElementById('stat-block').textContent = block;
   document.getElementById('stat-avgr').textContent = avgR;
 }
+
+window.setTab = setTab;
+window.runInvestigation = runInvestigation;
+window.loadCase = loadCase;
 
 // init
 updateR();
