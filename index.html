@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeAIce Abuse Investigator — IDB/CUP Engine</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+:root {
+  --bg: #080810;
+  --panel: #0d0d18;
+  --surface: #12121f;
+  --border: #1c1c2e;
+  --border-hi: #2a2a42;
+  --accent: #4fffb0;
+  --accent-dim: rgba(79,255,176,0.08);
+  --accent-border: rgba(79,255,176,0.25);
+  --warn: #ffb347;
+  --warn-dim: rgba(255,179,71,0.1);
+  --red: #ff4d6d;
+  --red-dim: rgba(255,77,109,0.1);
+  --blue: #60a5fa;
+  --text: #c8c8e0;
+  --text-dim: #5a5a7a;
+  --text-hi: #eeeef8;
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── TOP BAR ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 40px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.topbar-logo {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+.topbar-logo span { color: var(--text-dim); font-weight: 300; }
+.topbar-meta {
+  display: flex;
+  gap: 16px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.topbar-meta .live { color: var(--accent); }
+.topbar-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.status-dot.idle { background: var(--text-dim); box-shadow: none; animation: none; }
+.status-dot.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+
+/* ── MAIN LAYOUT ── */
+.main {
+  display: grid;
+  grid-template-columns: 320px 1fr 260px;
+  grid-template-rows: 1fr;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+}
+
+/* ── PANELS ── */
+.panel {
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.panel:last-child { border-right: none; }
+.panel-header {
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.panel-title {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.panel-title .accent { color: var(--accent); }
+.panel-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 6px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+}
+
+/* ── INTAKE PANEL (LEFT) ── */
+.field-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+  margin-top: 14px;
+}
+.field-label:first-child { margin-top: 0; }
+
+textarea, input, select {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 8px 10px;
+  outline: none;
+  resize: none;
+  transition: border-color 0.15s;
+}
+textarea:focus, input:focus, select:focus {
+  border-color: var(--accent-border);
+}
+textarea { line-height: 1.5; }
+select option { background: var(--surface); }
+
+.idb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+.idb-field { }
+.idb-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+  display: flex;
+  justify-content: space-between;
+}
+.idb-label .key { color: var(--accent); }
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: var(--border-hi);
+  padding: 0;
+  cursor: pointer;
+  border: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.idb-val {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  text-align: right;
+}
+
+.r-formula {
+  margin-top: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-align: center;
+}
+.r-formula .eq { color: var(--text-dim); }
+.r-formula .val { color: var(--accent); font-size: 16px; font-weight: 700; }
+.r-formula .components { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+.r-formula .components span { color: var(--text); }
+
+.gate-indicator {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: center;
+  border: 1px solid;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+.gate-pass { background: var(--accent-dim); border-color: var(--accent-border); color: var(--accent); }
+.gate-contain { background: var(--warn-dim); border-color: rgba(255,179,71,0.3); color: var(--warn); }
+.gate-block { background: var(--red-dim); border-color: rgba(255,77,109,0.25); color: var(--red); }
+
+.run-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--accent);
+  color: #020210;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.run-btn:hover { opacity: 0.85; }
+.run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── CENTER PANEL (ANALYSIS) ── */
+.center-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.analysis-header {
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.analysis-tabs {
+  display: flex;
+  gap: 0;
+}
+.tab {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.analysis-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+}
+
+.placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  opacity: 0.3;
+}
+.placeholder-icon {
+  font-family: var(--mono);
+  font-size: 32px;
+  color: var(--accent);
+}
+.placeholder-text {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Output blocks */
+.output-section {
+  margin-bottom: 16px;
+}
+.output-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+  margin-bottom: 8px;
+}
+.output-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+.output-box.mono { font-family: var(--mono); font-size: 11px; }
+
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.score-row:last-child { border-bottom: none; }
+.score-key { color: var(--accent); width: 20px; }
+.score-name { color: var(--text-dim); width: 140px; font-size: 10px; }
+.score-bar-wrap { flex: 1; height: 4px; background: var(--border-hi); }
+.score-bar { height: 100%; background: var(--accent); transition: width 0.5s ease; }
+.score-num { color: var(--text-hi); width: 35px; text-align: right; }
+
+.verdict-block {
+  padding: 14px;
+  border: 1px solid;
+  font-family: var(--mono);
+}
+.verdict-pass { background: var(--accent-dim); border-color: var(--accent-border); }
+.verdict-contain { background: var(--warn-dim); border-color: rgba(255,179,71,0.3); }
+.verdict-block-el { background: var(--red-dim); border-color: rgba(255,77,109,0.25); }
+
+.verdict-code {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.verdict-pass .verdict-code { color: var(--accent); }
+.verdict-contain .verdict-code { color: var(--warn); }
+.verdict-block-el .verdict-code { color: var(--red); }
+.verdict-detail { font-size: 10px; color: var(--text-dim); line-height: 1.6; }
+
+.loading-dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.loading-dots span {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: blink 1.2s infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
+
+/* ── RIGHT PANEL (CASE LOG) ── */
+.case-log { }
+.case-entry {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.case-entry:hover { border-color: var(--border-hi); }
+.case-entry.active { border-color: var(--accent-border); }
+.case-id {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between;
+}
+.case-id .ts { color: var(--accent); }
+.case-title {
+  font-size: 11px;
+  color: var(--text-hi);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.case-gate {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  display: inline-block;
+}
+.gate-tag-pass { background: var(--accent-dim); color: var(--accent); }
+.gate-tag-contain { background: var(--warn-dim); color: var(--warn); }
+.gate-tag-block { background: var(--red-dim); color: var(--red); }
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: var(--text-dim); }
+.stat-val { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="topbar-logo">PeAIce <span>// Abuse Investigator</span> — IDB/CUP Engine</div>
+  <div class="topbar-meta">
+    <span>R = d·c·e·h</span>
+    <span>|</span>
+    <span class="live" id="topbar-state">IDLE</span>
+  </div>
+  <div class="topbar-status">
+    <div class="status-dot idle" id="status-dot"></div>
+    <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)">EE:🟢 · PeAIce v3</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT: INTAKE + IDB SCORING -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title"><span class="accent">01</span> — Signal Intake + IDB</span>
+    </div>
+    <div class="panel-body">
+
+      <div class="field-label">Case ID / Label</div>
+      <input type="text" id="case-id" placeholder="CASE-001 / free text" />
+
+      <div class="field-label">Domain Vector</div>
+      <select id="domain">
+        <option value="agentic_misuse">Agentic AI Misuse</option>
+        <option value="prompt_injection">Prompt Injection</option>
+        <option value="api_abuse">API Abuse</option>
+        <option value="violent_activity">Violent Activity</option>
+        <option value="extremism">Extremism / Terror</option>
+        <option value="csam">Child Safety</option>
+        <option value="cbrn">CBRN</option>
+        <option value="fraud">Fraud / Deception</option>
+        <option value="data_exfil">Data Exfiltration</option>
+        <option value="other">Other / Unknown</option>
+      </select>
+
+      <div class="field-label">Signal Input — Paste Content / Behavior Description</div>
+      <textarea id="signal-input" rows="7" placeholder="Paste user content, behavior log, API call pattern, message thread, or describe the anomaly signal..."></textarea>
+
+      <div class="field-label">Context / Metadata</div>
+      <textarea id="context-input" rows="3" placeholder="Account age, usage pattern, prior flags, platform context..."></textarea>
+
+      <!-- IDB MANUAL OVERRIDE -->
+      <div class="field-label" style="margin-top:16px;">IDB Manual Scores — Override / Pre-score</div>
+      <div class="idb-grid">
+        <div class="idb-field">
+          <div class="idb-label"><span>d — <span class="key">Directional</span></span></div>
+          <input type="range" id="d-score" min="0" max="1" step="0.01" value="0.5">
+          <div class="idb-val"><span id="d-val">0.50</span></div>
+        </div>
+        <div class="idb-field">
+          <div class="idb-label"><span>c — <span class="key">Coherence</span></span></div>
+          <input type="range" id="c-score" min="0" max="1" step="0.01" value="0.5">
+          <div class="idb-val"><span id="c-val">0.50</span></div>
+        </div>
+        <div class="idb-field">
+          <div class="idb-label"><span>e — <span class="key">Eval Integrity</span></span></div>
+          <input type="range" id="e-score" min="0" max="1" step="0.01" value="0.5">
+          <div class="idb-val"><span id="e-val">0.50</span></div>
+        </div>
+        <div class="idb-field">
+          <div class="idb-label"><span>h — <span class="key">Non-Sovereignty</span></span></div>
+          <input type="range" id="h-score" min="0" max="1" step="0.01" value="0.5">
+          <div class="idb-val"><span id="h-val">0.50</span></div>
+        </div>
+      </div>
+
+      <!-- R FORMULA LIVE -->
+      <div class="r-formula">
+        <div class="eq">R = d · c · e · h</div>
+        <div class="val" id="r-val">0.0625</div>
+        <div class="components">
+          d=<span id="dc">0.50</span> · c=<span id="cc">0.50</span> · e=<span id="ec">0.50</span> · h=<span id="hc">0.50</span>
+        </div>
+      </div>
+
+      <div class="gate-indicator gate-contain" id="gate-pre">NEO-CONSERVATION GATE — CONTAIN + MONITOR</div>
+
+      <button class="run-btn" id="run-btn" onclick="runInvestigation()">
+        ▶ RUN CUP INVESTIGATION
+      </button>
+
+    </div>
+  </div>
+
+  <!-- CENTER: ANALYSIS OUTPUT -->
+  <div class="center-panel">
+    <div class="analysis-header">
+      <div class="analysis-tabs">
+        <div class="tab active" onclick="setTab('cup')" id="tab-cup">CUP Analysis</div>
+        <div class="tab" onclick="setTab('idb')" id="tab-idb">IDB Breakdown</div>
+        <div class="tab" onclick="setTab('verdict')" id="tab-verdict">Neo-Con Gate</div>
+        <div class="tab" onclick="setTab('ee')" id="tab-ee">EE Feedback</div>
+      </div>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim)" id="case-label-display">—</span>
+    </div>
+    <div class="analysis-body" id="analysis-body">
+      <div class="placeholder">
+        <div class="placeholder-icon">⊗</div>
+        <div class="placeholder-text">Awaiting Signal Input</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: CASE LOG + STATS -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title"><span class="accent">03</span> — Case Log</span>
+      <span class="panel-badge" id="case-count">0 Cases</span>
+    </div>
+    <div class="panel-body">
+
+      <!-- Session Stats -->
+      <div style="margin-bottom:12px;">
+        <div class="output-label">Session Stats</div>
+        <div class="stat-row"><span class="stat-label">Investigated</span><span class="stat-val" id="stat-total">0</span></div>
+        <div class="stat-row"><span class="stat-label">PASS</span><span class="stat-val" id="stat-pass" style="color:var(--accent)">0</span></div>
+        <div class="stat-row"><span class="stat-label">CONTAIN</span><span class="stat-val" id="stat-contain" style="color:var(--warn)">0</span></div>
+        <div class="stat-row"><span class="stat-label">BLOCK</span><span class="stat-val" id="stat-block" style="color:var(--red)">0</span></div>
+        <div class="stat-row"><span class="stat-label">Avg R Score</span><span class="stat-val" id="stat-avgr">—</span></div>
+      </div>
+
+      <div class="output-label">Cases</div>
+      <div id="case-log-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);text-align:center;padding:20px 0;">No cases yet</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API_URL = "https://api.anthropic.com/v1/messages";
+let cases = [];
+let currentTab = 'cup';
+let currentOutput = null;
+
+// ── SLIDER SYNC ──
+['d','c','e','h'].forEach(k => {
+  const slider = document.getElementById(k+'-score');
+  const val = document.getElementById(k+'-val');
+  const comp = document.getElementById(k+'c');
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value).toFixed(2);
+    val.textContent = v;
+    comp.textContent = v;
+    updateR();
+  });
+});
+
+function updateR() {
+  const d = parseFloat(document.getElementById('d-score').value);
+  const c = parseFloat(document.getElementById('c-score').value);
+  const e = parseFloat(document.getElementById('e-score').value);
+  const h = parseFloat(document.getElementById('h-score').value);
+  const r = d * c * e * h;
+  document.getElementById('r-val').textContent = r.toFixed(4);
+  updateGate(r);
+}
+
+function updateGate(r) {
+  const el = document.getElementById('gate-pre');
+  if (r >= 0.5) {
+    el.className = 'gate-indicator gate-pass';
+    el.textContent = 'NEO-CONSERVATION GATE — PASS';
+  } else if (r >= 0.15) {
+    el.className = 'gate-indicator gate-contain';
+    el.textContent = 'NEO-CONSERVATION GATE — CONTAIN + MONITOR';
+  } else {
+    el.className = 'gate-indicator gate-block';
+    el.textContent = 'NEO-CONSERVATION GATE — BLOCK / ESCALATE';
+  }
+}
+
+function setTab(t) {
+  currentTab = t;
+  ['cup','idb','verdict','ee'].forEach(id => {
+    document.getElementById('tab-'+id).classList.toggle('active', id===t);
+  });
+  if (currentOutput) renderOutput(currentOutput);
+}
+
+async function runInvestigation() {
+  const signal = document.getElementById('signal-input').value.trim();
+  if (!signal) { alert('Signal input required.'); return; }
+
+  const caseId = document.getElementById('case-id').value.trim() || `CASE-${String(cases.length+1).padStart(3,'0')}`;
+  const domain = document.getElementById('domain').value;
+  const ctx = document.getElementById('context-input').value.trim();
+  const d = parseFloat(document.getElementById('d-score').value);
+  const c = parseFloat(document.getElementById('c-score').value);
+  const e = parseFloat(document.getElementById('e-score').value);
+  const h = parseFloat(document.getElementById('h-score').value);
+  const r = d * c * e * h;
+
+  // UI state
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⬡ RUNNING CUP...';
+  document.getElementById('status-dot').className = 'status-dot';
+  document.getElementById('topbar-state').textContent = 'ANALYZING';
+  document.getElementById('case-label-display').textContent = caseId;
+
+  showLoading();
+
+  const systemPrompt = `You are the PeAIce CUP Engine (Coherence Under Pressure) — an AI abuse investigation system built on the L²_C framework.
+
+You analyze signals using the IDB/CUP/R=d·c·e·h framework:
+- d = Directional integrity (trust vector, Kakeya-Besicovitch: is intent coherent across dimensions?)
+- c = Coherence (internal consistency, Zeta-0 spectral alignment at Re(s)=½)
+- e = Evaluator integrity (is the actor gaming evaluation mechanisms?)
+- h = Evaluator non-sovereignty (FLAG-001: does the actor seek to override human oversight?)
+- R = d·c·e·h — composite coherence score (0-1)
+
+Neo-Conservation Gate:
+- R ≥ 0.5 → PASS (bounded coherence preserved)
+- 0.15 ≤ R < 0.5 → CONTAIN + MONITOR
+- R < 0.15 → BLOCK / ESCALATE
+
+Respond ONLY with a JSON object, no markdown:
+{
+  "cup_analysis": "3-5 sentence deep investigation: intent, context, escalation risk, adversarial vector. Be specific.",
+  "idb_scores": {
+    "d": 0.0-1.0,
+    "c": 0.0-1.0,
+    "e": 0.0-1.0,
+    "h": 0.0-1.0,
+    "d_reasoning": "one sentence",
+    "c_reasoning": "one sentence",
+    "e_reasoning": "one sentence",
+    "h_reasoning": "one sentence"
+  },
+  "r_computed": 0.0-1.0,
+  "gate": "PASS" or "CONTAIN" or "BLOCK",
+  "threat_vectors": ["vector1","vector2"],
+  "ee_feedback": "2-3 sentences: what detection rule, policy update, or model adjustment does this case generate? How does it compound into stronger invariants?",
+  "escalation_priority": "LOW" or "MEDIUM" or "HIGH" or "CRITICAL",
+  "recommended_action": "Specific 1-2 sentence action"
+}`;
+
+  const userMsg = `CASE ID: ${caseId}
+DOMAIN: ${domain}
+ANALYST IDB PRE-SCORE: d=${d}, c=${c}, e=${e}, h=${h}, R=${r.toFixed(4)}
+
+SIGNAL INPUT:
+${signal}
+
+${ctx ? `CONTEXT/METADATA:\n${ctx}` : ''}
+
+Run full CUP investigation. Override analyst pre-scores with your computed values if evidence warrants.`;
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMsg }]
+      })
+    });
+
+    const data = await res.json();
+    const raw = data.content?.[0]?.text || '{}';
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+    catch { parsed = { cup_analysis: raw, gate: 'CONTAIN', escalation_priority: 'MEDIUM', ee_feedback: '', recommended_action: '', idb_scores: {d,c,e,h,d_reasoning:'',c_reasoning:'',e_reasoning:'',h_reasoning:''}, r_computed: r, threat_vectors: [] }; }
+
+    const entry = {
+      id: caseId,
+      domain,
+      signal: signal.substring(0,60)+'...',
+      ts: new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'}),
+      gate: parsed.gate || 'CONTAIN',
+      r: parsed.r_computed || r,
+      output: parsed
+    };
+
+    cases.unshift(entry);
+    currentOutput = entry;
+    renderOutput(entry);
+    updateCaseLog();
+    updateStats();
+
+    // sync sliders to AI scores
+    const ai = parsed.idb_scores;
+    if (ai) {
+      ['d','c','e','h'].forEach(k => {
+        if (ai[k] !== undefined) {
+          document.getElementById(k+'-score').value = ai[k];
+          document.getElementById(k+'-val').textContent = ai[k].toFixed(2);
+          document.getElementById(k+'c').textContent = ai[k].toFixed(2);
+        }
+      });
+      updateR();
+    }
+
+  } catch(err) {
+    showError(err.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ RUN CUP INVESTIGATION';
+  document.getElementById('status-dot').className = 'status-dot idle';
+  document.getElementById('topbar-state').textContent = 'IDLE';
+}
+
+function showLoading() {
+  document.getElementById('analysis-body').innerHTML = `
+    <div style="height:100%;display:flex;align-items:center;justify-content:center;">
+      <div style="text-align:center;gap:12px;display:flex;flex-direction:column;align-items:center;">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);letter-spacing:0.1em;">CUP ENGINE RUNNING</div>
+      </div>
+    </div>`;
+}
+
+function showError(msg) {
+  document.getElementById('analysis-body').innerHTML = `
+    <div style="background:var(--red-dim);border:1px solid rgba(255,77,109,0.25);padding:14px;font-family:var(--mono);font-size:11px;color:var(--red);">ERROR: ${msg}</div>`;
+}
+
+function renderOutput(entry) {
+  const o = entry.output;
+  const body = document.getElementById('analysis-body');
+
+  if (currentTab === 'cup') {
+    const priority = o.escalation_priority || 'MEDIUM';
+    const pColor = {LOW:'var(--accent)',MEDIUM:'var(--warn)',HIGH:'var(--red)',CRITICAL:'var(--red)'}[priority] || 'var(--warn)';
+    body.innerHTML = `
+      <div class="output-section">
+        <div class="output-label">CUP — Coherence Under Pressure Analysis</div>
+        <div class="output-box">${o.cup_analysis || '—'}</div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">Threat Vectors Identified</div>
+        <div class="output-box mono">${(o.threat_vectors||[]).map(v=>`→ ${v}`).join('\n') || '— none identified'}</div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">Recommended Action</div>
+        <div class="output-box" style="border-left:3px solid ${pColor}">${o.recommended_action || '—'}
+<br><br><span style="font-family:var(--mono);font-size:10px;color:${pColor}">PRIORITY: ${priority}</span></div>
+      </div>`;
+
+  } else if (currentTab === 'idb') {
+    const ai = o.idb_scores || {};
+    const keys = ['d','c','e','h'];
+    const names = {d:'Directional Trust',c:'Coherence',e:'Eval Integrity',h:'Non-Sovereignty'};
+    body.innerHTML = `
+      <div class="output-section">
+        <div class="output-label">IDB Component Scores (AI-Computed)</div>
+        <div class="output-box">
+          ${keys.map(k => `
+          <div class="score-row">
+            <span class="score-key">${k}</span>
+            <span class="score-name">${names[k]}</span>
+            <div class="score-bar-wrap"><div class="score-bar" style="width:${((ai[k]||0)*100).toFixed(0)}%"></div></div>
+            <span class="score-num">${(ai[k]||0).toFixed(2)}</span>
+          </div>`).join('')}
+        </div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">Score Reasoning</div>
+        <div class="output-box mono">${keys.map(k=>`${k}: ${ai[k+'_reasoning']||'—'}`).join('\n')}</div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">R = d·c·e·h</div>
+        <div class="output-box mono" style="font-size:18px;text-align:center;color:var(--accent);padding:16px;">${(o.r_computed||0).toFixed(4)}</div>
+      </div>`;
+
+  } else if (currentTab === 'verdict') {
+    const gate = o.gate || 'CONTAIN';
+    const cls = {PASS:'verdict-pass',CONTAIN:'verdict-contain',BLOCK:'verdict-block-el'}[gate]||'verdict-contain';
+    const msg = {
+      PASS:'L²_C invariants preserved. Bounded coherence within policy envelope. Continue monitoring at standard cadence.',
+      CONTAIN:'Signal deviates from invariant behavior. Insufficient R to clear. Quarantine account, escalate to senior investigator, monitor for escalation.',
+      BLOCK:'Critical coherence violation. R below safety threshold. Immediate enforcement action required. Brief senior leadership. External reporting may apply.'
+    }[gate];
+    body.innerHTML = `
+      <div class="output-section">
+        <div class="output-label">Neo-Conservation Gate — Verdict</div>
+        <div class="verdict-block ${cls}">
+          <div class="verdict-code">${gate}</div>
+          <div class="verdict-detail">${msg}</div>
+        </div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">R Score</div>
+        <div class="output-box mono" style="text-align:center;font-size:20px;color:var(--accent);padding:14px;">${(o.r_computed||0).toFixed(4)}</div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">Escalation Priority</div>
+        <div class="output-box mono">${o.escalation_priority||'—'}</div>
+      </div>`;
+
+  } else if (currentTab === 'ee') {
+    body.innerHTML = `
+      <div class="output-section">
+        <div class="output-label">Excellence Engine — Feedback Loop Output</div>
+        <div class="output-box">${o.ee_feedback||'—'}</div>
+      </div>
+      <div class="output-section">
+        <div class="output-label">Compounding Rule / Policy Update</div>
+        <div class="output-box mono">Case: ${entry.id}
+Domain: ${entry.domain}
+Gate: ${o.gate}
+R: ${(o.r_computed||0).toFixed(4)}
+Vectors: ${(o.threat_vectors||[]).join(', ')||'—'}
+
+→ This case feeds detection signal back into IDB taxonomy.
+→ Heavy Ball β compounds: x_{t+1} = x_t − α∇f(x_t) + β(x_t − x_{t-1})</div>
+      </div>`;
+  }
+}
+
+function updateCaseLog() {
+  const list = document.getElementById('case-log-list');
+  document.getElementById('case-count').textContent = `${cases.length} Case${cases.length!==1?'s':''}`;
+  list.innerHTML = cases.map((c,i) => {
+    const tagClass = {PASS:'gate-tag-pass',CONTAIN:'gate-tag-contain',BLOCK:'gate-tag-block'}[c.gate]||'gate-tag-contain';
+    return `<div class="case-entry${i===0?' active':''}" onclick="loadCase(${i})">
+      <div class="case-id"><span>${c.id}</span><span class="ts">${c.ts}</span></div>
+      <div class="case-title">${c.signal}</div>
+      <span class="case-gate ${tagClass}">${c.gate}</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:6px;">R=${c.r.toFixed(3)}</span>
+    </div>`;
+  }).join('');
+}
+
+function loadCase(i) {
+  currentOutput = cases[i];
+  document.getElementById('case-label-display').textContent = cases[i].id;
+  renderOutput(cases[i]);
+  document.querySelectorAll('.case-entry').forEach((el,j)=>el.classList.toggle('active',i===j));
+}
+
+function updateStats() {
+  const total = cases.length;
+  const pass = cases.filter(c=>c.gate==='PASS').length;
+  const contain = cases.filter(c=>c.gate==='CONTAIN').length;
+  const block = cases.filter(c=>c.gate==='BLOCK').length;
+  const avgR = total ? (cases.reduce((a,c)=>a+c.r,0)/total).toFixed(3) : '—';
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-pass').textContent = pass;
+  document.getElementById('stat-contain').textContent = contain;
+  document.getElementById('stat-block').textContent = block;
+  document.getElementById('stat-avgr').textContent = avgR;
+}
+
+// init
+updateR();
+</script>
+</body>
+</html>
